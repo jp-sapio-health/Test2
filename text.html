@@ -1,0 +1,446 @@
+<!doctype html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Interax — Medication Interaction Check</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,600;1,9..144,400&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          display: ['"Fraunces"', 'serif'],
+          sans: ['"Inter Tight"', 'system-ui', 'sans-serif'],
+          mono: ['"JetBrains Mono"', 'monospace'],
+        },
+        colors: {
+          bg: '#F5F1EA',
+          ink: '#1A1A1A',
+          muted: '#6B6558',
+          line: '#E5DFD3',
+          accent: '#D94F2B',
+          leaf: '#3F5D45',
+          amber: '#C8872E',
+        },
+      },
+    },
+  }
+</script>
+<style>
+  html, body, #root { height: 100%; }
+  body {
+    background: #F5F1EA;
+    color: #1A1A1A;
+    font-family: 'Inter Tight', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    background-image:
+      radial-gradient(circle at 12% 8%, rgba(217, 79, 43, 0.06), transparent 40%),
+      radial-gradient(circle at 88% 92%, rgba(63, 93, 69, 0.05), transparent 45%);
+  }
+  .grain {
+    position: fixed; inset: 0; pointer-events: none;
+    opacity: 0.04; mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .rise { animation: rise 0.5s ease-out both; }
+  .font-display { font-family: 'Fraunces', serif; }
+  .font-mono { font-family: 'JetBrains Mono', monospace; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="module">
+import React, { useState, useMemo } from 'https://esm.sh/react@18.3.1'
+import { createRoot } from 'https://esm.sh/react-dom@18.3.1/client'
+import htm from 'https://esm.sh/htm@3.1.1'
+
+const html = htm.bind(React.createElement)
+
+// ---------- DATA ----------
+const SUBSTANCES = [
+  { id: 'lisdexamfetamine', name: 'Lisdexamfetamine', category: 'Stimulant (ADHD)', aliases: ['elvanse', 'vyvanse', 'lisdex'] },
+  { id: 'methylphenidate', name: 'Methylphenidate', category: 'Stimulant (ADHD)', aliases: ['ritalin', 'concerta', 'equasym'] },
+  { id: 'atomoxetine', name: 'Atomoxetine', category: 'ADHD (non-stimulant)', aliases: ['strattera'] },
+  { id: 'paracetamol', name: 'Paracetamol', category: 'Analgesic', aliases: ['acetaminophen', 'tylenol', 'panadol'] },
+  { id: 'ibuprofen', name: 'Ibuprofen', category: 'NSAID', aliases: ['nurofen', 'advil'] },
+  { id: 'naproxen', name: 'Naproxen', category: 'NSAID', aliases: ['naprosyn'] },
+  { id: 'aspirin', name: 'Aspirin', category: 'Antiplatelet / NSAID', aliases: ['asa', 'acetylsalicylic acid'] },
+  { id: 'codeine', name: 'Codeine', category: 'Opioid', aliases: [] },
+  { id: 'tramadol', name: 'Tramadol', category: 'Opioid', aliases: [] },
+  { id: 'warfarin', name: 'Warfarin', category: 'Anticoagulant', aliases: [] },
+  { id: 'apixaban', name: 'Apixaban', category: 'DOAC', aliases: ['eliquis'] },
+  { id: 'atorvastatin', name: 'Atorvastatin', category: 'Statin', aliases: ['lipitor'] },
+  { id: 'simvastatin', name: 'Simvastatin', category: 'Statin', aliases: [] },
+  { id: 'amlodipine', name: 'Amlodipine', category: 'Calcium channel blocker', aliases: [] },
+  { id: 'ramipril', name: 'Ramipril', category: 'ACE inhibitor', aliases: [] },
+  { id: 'bisoprolol', name: 'Bisoprolol', category: 'Beta blocker', aliases: [] },
+  { id: 'sertraline', name: 'Sertraline', category: 'SSRI', aliases: ['zoloft'] },
+  { id: 'fluoxetine', name: 'Fluoxetine', category: 'SSRI', aliases: ['prozac'] },
+  { id: 'citalopram', name: 'Citalopram', category: 'SSRI', aliases: [] },
+  { id: 'venlafaxine', name: 'Venlafaxine', category: 'SNRI', aliases: ['effexor'] },
+  { id: 'omeprazole', name: 'Omeprazole', category: 'PPI', aliases: [] },
+  { id: 'metformin', name: 'Metformin', category: 'Antidiabetic', aliases: [] },
+  { id: 'levothyroxine', name: 'Levothyroxine', category: 'Thyroid hormone', aliases: ['thyroxine'] },
+  { id: 'vitamin-d', name: 'Vitamin D', category: 'Vitamin', aliases: ['cholecalciferol', 'vit d'] },
+  { id: 'vitamin-k', name: 'Vitamin K', category: 'Vitamin', aliases: ['phytomenadione'] },
+  { id: 'vitamin-c', name: 'Vitamin C', category: 'Vitamin', aliases: ['ascorbic acid'] },
+  { id: 'vitamin-b6', name: 'Vitamin B6', category: 'Vitamin', aliases: ['pyridoxine'] },
+  { id: 'calcium', name: 'Calcium', category: 'Mineral', aliases: [] },
+  { id: 'magnesium', name: 'Magnesium', category: 'Mineral', aliases: [] },
+  { id: 'iron', name: 'Iron', category: 'Mineral', aliases: ['ferrous sulfate', 'ferrous fumarate'] },
+  { id: 'zinc', name: 'Zinc', category: 'Mineral', aliases: [] },
+  { id: 'omega-3', name: 'Omega-3 (fish oil)', category: 'Supplement', aliases: ['fish oil', 'epa', 'dha'] },
+  { id: 'st-johns-wort', name: "St John's Wort", category: 'Herbal', aliases: ['hypericum'] },
+  { id: 'grapefruit', name: 'Grapefruit juice', category: 'Food', aliases: ['grapefruit'] },
+  { id: 'caffeine', name: 'Caffeine', category: 'Stimulant', aliases: ['coffee'] },
+  { id: 'alcohol', name: 'Alcohol', category: 'Other', aliases: ['ethanol'] },
+  { id: 'creatine', name: 'Creatine', category: 'Supplement', aliases: [] },
+  { id: 'melatonin', name: 'Melatonin', category: 'Supplement', aliases: [] },
+]
+
+const INTERACTIONS = [
+  { a: 'lisdexamfetamine', b: 'sertraline', severity: 'moderate', summary: 'Possible increased serotonergic effects; monitor for serotonin syndrome signs (agitation, tremor, sweating).' },
+  { a: 'lisdexamfetamine', b: 'fluoxetine', severity: 'moderate', summary: 'Possible increased serotonergic effects; rare serotonin syndrome risk.' },
+  { a: 'lisdexamfetamine', b: 'citalopram', severity: 'moderate', summary: 'Additive serotonergic load; monitor symptoms.' },
+  { a: 'lisdexamfetamine', b: 'venlafaxine', severity: 'moderate', summary: 'SNRI + stimulant — potential BP rise and serotonergic effects.' },
+  { a: 'lisdexamfetamine', b: 'caffeine', severity: 'minor', summary: 'Additive stimulation; may worsen jitteriness, sleep disruption, and tachycardia.' },
+  { a: 'lisdexamfetamine', b: 'vitamin-c', severity: 'minor', summary: 'High-dose vitamin C can acidify urine and modestly reduce amphetamine levels if taken close together.' },
+  { a: 'lisdexamfetamine', b: 'alcohol', severity: 'moderate', summary: 'Stimulant can mask alcohol intoxication, increasing risk of overconsumption and cardiovascular strain.' },
+  { a: 'methylphenidate', b: 'caffeine', severity: 'minor', summary: 'Additive stimulation.' },
+  { a: 'methylphenidate', b: 'sertraline', severity: 'moderate', summary: 'Possible additive serotonergic/stimulant effects.' },
+  { a: 'warfarin', b: 'aspirin', severity: 'major', summary: 'Significantly increased bleeding risk.' },
+  { a: 'warfarin', b: 'ibuprofen', severity: 'major', summary: 'NSAIDs raise bleeding risk and can displace warfarin from protein binding.' },
+  { a: 'warfarin', b: 'naproxen', severity: 'major', summary: 'Increased GI and systemic bleeding risk.' },
+  { a: 'warfarin', b: 'vitamin-k', severity: 'major', summary: 'Vitamin K directly antagonises warfarin — can reduce anticoagulation.' },
+  { a: 'warfarin', b: 'omega-3', severity: 'moderate', summary: 'High-dose fish oil may modestly increase bleeding risk.' },
+  { a: 'warfarin', b: 'st-johns-wort', severity: 'major', summary: 'Induces CYP enzymes and reduces warfarin effect — loss of anticoagulation.' },
+  { a: 'warfarin', b: 'alcohol', severity: 'moderate', summary: 'Acute heavy drinking raises INR; chronic use lowers it. Unpredictable.' },
+  { a: 'apixaban', b: 'aspirin', severity: 'major', summary: 'Compounded bleeding risk.' },
+  { a: 'apixaban', b: 'ibuprofen', severity: 'major', summary: 'NSAID + DOAC — significant bleeding risk.' },
+  { a: 'apixaban', b: 'st-johns-wort', severity: 'major', summary: 'Reduces apixaban levels via CYP3A4/P-gp induction.' },
+  { a: 'simvastatin', b: 'grapefruit', severity: 'major', summary: 'Grapefruit inhibits CYP3A4 → sharp rise in simvastatin levels → rhabdomyolysis risk.' },
+  { a: 'atorvastatin', b: 'grapefruit', severity: 'moderate', summary: 'Less severe than simvastatin but still raises levels; limit intake.' },
+  { a: 'simvastatin', b: 'amlodipine', severity: 'moderate', summary: 'Amlodipine raises simvastatin exposure; max simvastatin 20 mg/day when combined.' },
+  { a: 'sertraline', b: 'ibuprofen', severity: 'moderate', summary: 'SSRI + NSAID raises GI bleeding risk.' },
+  { a: 'fluoxetine', b: 'ibuprofen', severity: 'moderate', summary: 'SSRI + NSAID raises GI bleeding risk.' },
+  { a: 'sertraline', b: 'tramadol', severity: 'major', summary: 'Serotonin syndrome risk and lowered seizure threshold.' },
+  { a: 'fluoxetine', b: 'tramadol', severity: 'major', summary: 'Serotonin syndrome risk and lowered seizure threshold.' },
+  { a: 'sertraline', b: 'st-johns-wort', severity: 'major', summary: 'Additive serotonergic effects — serotonin syndrome risk.' },
+  { a: 'levothyroxine', b: 'calcium', severity: 'moderate', summary: 'Reduces levothyroxine absorption — separate doses by ≥4 hours.' },
+  { a: 'levothyroxine', b: 'iron', severity: 'moderate', summary: 'Reduces levothyroxine absorption — separate doses by ≥4 hours.' },
+  { a: 'levothyroxine', b: 'omeprazole', severity: 'minor', summary: 'PPIs may modestly reduce absorption.' },
+  { a: 'magnesium', b: 'calcium', severity: 'minor', summary: 'Compete for absorption at high doses; space them if taking large amounts.' },
+  { a: 'iron', b: 'calcium', severity: 'moderate', summary: 'Calcium reduces iron absorption — separate by 2 hours.' },
+  { a: 'iron', b: 'vitamin-c', severity: 'minor', summary: 'Beneficial — vitamin C enhances iron absorption.' },
+  { a: 'zinc', b: 'iron', severity: 'minor', summary: 'Compete for absorption at high doses.' },
+  { a: 'melatonin', b: 'alcohol', severity: 'moderate', summary: 'Additive sedation and disrupted sleep architecture.' },
+  { a: 'melatonin', b: 'lisdexamfetamine', severity: 'minor', summary: 'Opposing effects; melatonin may help counteract stimulant-induced insomnia.' },
+  { a: 'metformin', b: 'alcohol', severity: 'moderate', summary: 'Heavy alcohol raises lactic acidosis risk.' },
+  { a: 'caffeine', b: 'alcohol', severity: 'minor', summary: 'Can mask intoxication; encourages overconsumption.' },
+]
+
+function findInteractions(ids) {
+  const set = new Set(ids)
+  const hits = INTERACTIONS.filter(i => set.has(i.a) && set.has(i.b))
+  const order = { major: 0, moderate: 1, minor: 2 }
+  return hits.sort((x, y) => order[x.severity] - order[y.severity])
+}
+
+function searchSubstances(query) {
+  const q = query.trim().toLowerCase()
+  if (!q) return []
+  return SUBSTANCES.filter(s =>
+    s.name.toLowerCase().includes(q) ||
+    s.id.includes(q) ||
+    s.aliases.some(a => a.includes(q))
+  ).slice(0, 8)
+}
+
+const getById = id => SUBSTANCES.find(s => s.id === id)
+
+const SEVERITY_STYLES = {
+  major:    { label: 'Major',    dot: 'bg-accent', ring: 'ring-accent/30', border: 'border-accent/40', bg: 'bg-accent/5' },
+  moderate: { label: 'Moderate', dot: 'bg-amber',  ring: 'ring-amber/30',  border: 'border-amber/40',  bg: 'bg-amber/5' },
+  minor:    { label: 'Minor',    dot: 'bg-leaf',   ring: 'ring-leaf/30',   border: 'border-leaf/40',   bg: 'bg-leaf/5' },
+}
+
+// ---------- ICONS (inline SVG) ----------
+const Icon = ({ d, className = 'h-4 w-4' }) => html`
+  <svg class=${className} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    ${d.map(path => html`<path d=${path} />`)}
+  </svg>
+`
+const IconPill    = props => html`<${Icon} ...${props} d=${['m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z', 'm8.5 8.5 7 7']} />`
+const IconSearch  = props => html`<${Icon} ...${props} d=${['M21 21l-4.35-4.35', 'M10 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16Z']} />`
+const IconPlus    = props => html`<${Icon} ...${props} d=${['M12 5v14', 'M5 12h14']} />`
+const IconX       = props => html`<${Icon} ...${props} d=${['M18 6 6 18', 'M6 6l12 12']} />`
+const IconAlert   = props => html`<${Icon} ...${props} d=${['m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z', 'M12 9v4', 'M12 17h.01']} />`
+const IconInfo    = props => html`<${Icon} ...${props} d=${['M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z', 'M12 16v-4', 'M12 8h.01']} />`
+const IconCheck   = props => html`<${Icon} ...${props} d=${['M22 11.08V12a10 10 0 1 1-5.93-9.14', 'm9 11 3 3L22 4']} />`
+
+// ---------- APP ----------
+function App() {
+  const [query, setQuery] = useState('')
+  const [selected, setSelected] = useState([])
+  const [focused, setFocused] = useState(false)
+
+  const results = useMemo(() => searchSubstances(query).filter(s => !selected.includes(s.id)), [query, selected])
+  const interactions = useMemo(() => findInteractions(selected), [selected])
+  const counts = useMemo(() => {
+    const c = { major: 0, moderate: 0, minor: 0 }
+    interactions.forEach(i => c[i.severity]++)
+    return c
+  }, [interactions])
+
+  const addSubstance = id => {
+    setSelected(prev => prev.includes(id) ? prev : [...prev, id])
+    setQuery('')
+  }
+  const removeSubstance = id => setSelected(prev => prev.filter(s => s !== id))
+
+  return html`
+    <div class="min-h-screen relative">
+      <div class="grain"></div>
+
+      <header class="max-w-5xl mx-auto px-6 pt-10 pb-8">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="h-9 w-9 rounded-full bg-ink text-bg flex items-center justify-center">
+              <${IconPill} className="h-4 w-4" />
+            </div>
+            <div class="flex items-baseline gap-2">
+              <span class="font-display text-xl font-medium tracking-tight">Interax</span>
+              <span class="text-[10px] uppercase tracking-[0.15em] text-muted">v0.1 · lifestyle tool</span>
+            </div>
+          </div>
+          <div class="hidden sm:flex items-center gap-2 text-xs text-muted">
+            <div class="h-1.5 w-1.5 rounded-full bg-leaf animate-pulse"></div>
+            not clinical advice
+          </div>
+        </div>
+      </header>
+
+      <section class="max-w-5xl mx-auto px-6 pb-12">
+        <div class="max-w-2xl">
+          <p class="text-xs uppercase tracking-[0.18em] text-muted mb-4">Interaction Check</p>
+          <h1 class="font-display text-5xl sm:text-6xl leading-[0.95] tracking-tight mb-6">
+            What happens <em class="italic font-normal text-accent">when</em><br/>
+            your medicines meet.
+          </h1>
+          <p class="text-muted text-lg max-w-xl leading-relaxed">
+            Add everything you take — prescription drugs, over-the-counter, vitamins, supplements, even your morning coffee. We'll surface the interactions worth knowing about.
+          </p>
+        </div>
+
+        <div class="mt-10 relative max-w-2xl">
+          <div class="flex items-center gap-3 border-b border-line focus-within:border-ink transition-colors">
+            <${IconSearch} className="h-5 w-5 text-muted" />
+            <input
+              value=${query}
+              onInput=${e => setQuery(e.target.value)}
+              onFocus=${() => setFocused(true)}
+              onBlur=${() => setTimeout(() => setFocused(false), 150)}
+              placeholder="Search a medication, vitamin or supplement…"
+              class="flex-1 bg-transparent border-none outline-none text-lg h-14 placeholder:text-muted text-ink"
+            />
+            ${query && html`
+              <button onClick=${() => setQuery('')} class="text-muted hover:text-ink">
+                <${IconX} className="h-4 w-4" />
+              </button>
+            `}
+          </div>
+
+          ${focused && results.length > 0 && html`
+            <div class="absolute left-0 right-0 top-full mt-2 bg-bg border border-line rounded-xl shadow-[0_20px_40px_-20px_rgba(0,0,0,0.15)] overflow-hidden z-10 rise">
+              ${results.map(s => html`
+                <button
+                  key=${s.id}
+                  onMouseDown=${e => e.preventDefault()}
+                  onClick=${() => addSubstance(s.id)}
+                  class="w-full px-5 py-3 flex items-center justify-between hover:bg-line/40 transition-colors text-left border-b border-line/50 last:border-0"
+                >
+                  <div>
+                    <div class="font-medium text-ink">${s.name}</div>
+                    <div class="text-xs text-muted mt-0.5">${s.category}</div>
+                  </div>
+                  <${IconPlus} className="h-4 w-4 text-muted" />
+                </button>
+              `)}
+            </div>
+          `}
+
+          ${focused && query && results.length === 0 && html`
+            <div class="absolute left-0 right-0 top-full mt-2 bg-bg border border-line rounded-xl p-5 z-10">
+              <p class="text-sm text-muted">No match. The database is curated — common meds and supplements only.</p>
+            </div>
+          `}
+        </div>
+
+        ${selected.length === 0 && html`
+          <div class="mt-8 max-w-2xl">
+            <p class="text-xs uppercase tracking-[0.15em] text-muted mb-3">Try adding</p>
+            <div class="flex flex-wrap gap-2">
+              ${['lisdexamfetamine', 'ibuprofen', 'vitamin-d', 'caffeine', 'omega-3', 'sertraline'].map(id => {
+                const s = getById(id)
+                return html`
+                  <button
+                    key=${id}
+                    onClick=${() => addSubstance(id)}
+                    class="px-4 py-2 rounded-full border border-line hover:border-ink hover:bg-ink hover:text-bg transition-all text-sm"
+                  >
+                    + ${s.name}
+                  </button>
+                `
+              })}
+            </div>
+          </div>
+        `}
+      </section>
+
+      ${selected.length > 0 && html`
+        <section class="max-w-5xl mx-auto px-6 pb-24">
+          <div class="grid lg:grid-cols-[1fr_1.4fr] gap-10">
+            <div>
+              <div class="flex items-baseline justify-between mb-5">
+                <h2 class="font-display text-2xl">Your stack</h2>
+                <span class="text-xs text-muted tabular-nums">${selected.length} item${selected.length !== 1 ? 's' : ''}</span>
+              </div>
+              <div class="space-y-2">
+                ${selected.map((id, idx) => {
+                  const s = getById(id)
+                  return html`
+                    <div
+                      key=${id}
+                      class="group flex items-center justify-between px-4 py-3 rounded-xl border border-line bg-bg hover:border-ink/30 transition-all rise"
+                      style=${{ animationDelay: `${idx * 40}ms` }}
+                    >
+                      <div class="flex items-center gap-3">
+                        <span class="font-mono text-[10px] text-muted w-5">${String(idx + 1).padStart(2, '0')}</span>
+                        <div>
+                          <div class="font-medium text-ink">${s.name}</div>
+                          <div class="text-xs text-muted">${s.category}</div>
+                        </div>
+                      </div>
+                      <button
+                        onClick=${() => removeSubstance(id)}
+                        class="text-muted hover:text-accent transition-colors"
+                      >
+                        <${IconX} className="h-4 w-4" />
+                      </button>
+                    </div>
+                  `
+                })}
+              </div>
+
+              ${selected.length >= 2 && html`
+                <div class="mt-6 p-5 rounded-xl bg-ink text-bg">
+                  <p class="text-xs uppercase tracking-[0.15em] text-bg/60 mb-3">Summary</p>
+                  <div class="flex items-baseline gap-6">
+                    <div>
+                      <div class="font-display text-4xl tabular-nums">${interactions.length}</div>
+                      <div class="text-xs text-bg/60 mt-1">interaction${interactions.length !== 1 ? 's' : ''} found</div>
+                    </div>
+                    <div class="flex flex-col gap-1 text-xs">
+                      ${counts.major > 0 && html`<div class="flex items-center gap-2"><span class="h-1.5 w-1.5 rounded-full bg-accent"></span>${counts.major} major</div>`}
+                      ${counts.moderate > 0 && html`<div class="flex items-center gap-2"><span class="h-1.5 w-1.5 rounded-full bg-amber"></span>${counts.moderate} moderate</div>`}
+                      ${counts.minor > 0 && html`<div class="flex items-center gap-2"><span class="h-1.5 w-1.5 rounded-full bg-leaf"></span>${counts.minor} minor</div>`}
+                    </div>
+                  </div>
+                </div>
+              `}
+            </div>
+
+            <div>
+              <div class="flex items-baseline justify-between mb-5">
+                <h2 class="font-display text-2xl">Interactions</h2>
+                ${selected.length >= 2 && interactions.length === 0 && html`
+                  <span class="text-xs text-leaf flex items-center gap-1.5">
+                    <${IconCheck} className="h-3.5 w-3.5" /> None found
+                  </span>
+                `}
+              </div>
+
+              ${selected.length < 2 && html`
+                <div class="rounded-xl border border-dashed border-line bg-bg/60 p-8 text-center">
+                  <p class="text-muted text-sm">Add at least two items to check for interactions.</p>
+                </div>
+              `}
+
+              ${selected.length >= 2 && interactions.length === 0 && html`
+                <div class="rounded-xl border border-line bg-bg/60 p-8">
+                  <div class="flex items-start gap-4">
+                    <div class="h-10 w-10 rounded-full bg-leaf/10 flex items-center justify-center flex-shrink-0">
+                      <${IconCheck} className="h-5 w-5 text-leaf" />
+                    </div>
+                    <div>
+                      <h3 class="font-display text-lg mb-1">No known interactions</h3>
+                      <p class="text-sm text-muted leading-relaxed">
+                        Nothing flagged between the items on your list in our curated dataset. This doesn't guarantee safety — always check with a pharmacist or clinician for real decisions.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              `}
+
+              <div class="space-y-3">
+                ${interactions.map((i, idx) => {
+                  const style = SEVERITY_STYLES[i.severity]
+                  const IconComp = i.severity === 'major' ? IconAlert : IconInfo
+                  const a = getById(i.a)
+                  const b = getById(i.b)
+                  return html`
+                    <div
+                      key=${`${i.a}-${i.b}`}
+                      class=${`rounded-xl border ${style.border} ${style.bg} rise`}
+                      style=${{ animationDelay: `${idx * 60}ms` }}
+                    >
+                      <div class="p-5">
+                        <div class="flex items-start gap-4">
+                          <div class=${`h-9 w-9 rounded-full ${style.bg} ring-1 ${style.ring} flex items-center justify-center flex-shrink-0`}>
+                            <${IconComp} className="h-4 w-4" />
+                          </div>
+                          <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 mb-2">
+                              <span class=${`h-1.5 w-1.5 rounded-full ${style.dot}`}></span>
+                              <span class="text-[10px] uppercase tracking-[0.15em] font-medium">${style.label}</span>
+                            </div>
+                            <div class="font-display text-lg leading-tight mb-2">
+                              ${a.name} <span class="text-muted font-sans text-sm italic">with</span> ${b.name}
+                            </div>
+                            <p class="text-sm text-ink/80 leading-relaxed">${i.summary}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  `
+                })}
+              </div>
+            </div>
+          </div>
+        </section>
+      `}
+
+      <footer class="max-w-5xl mx-auto px-6 pb-10 pt-6 border-t border-line">
+        <p class="text-xs text-muted leading-relaxed max-w-3xl">
+          <strong class="text-ink">Disclaimer.</strong> Interax is an informational lifestyle tool built on a small curated dataset. It is not a medical device, not exhaustive, and not a substitute for professional pharmacist or clinician review. Do not make medication decisions based on this app.
+        </p>
+      </footer>
+    </div>
+  `
+}
+
+createRoot(document.getElementById('root')).render(html`<${App} />`)
+</script>
+
+</body>
+</html>
